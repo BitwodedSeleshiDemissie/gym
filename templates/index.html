@@ -14,9 +14,13 @@
       #chat { padding: .5rem; background: #fff; border-top: 1px solid #dee2e6; }
       #chat-input { display: flex; padding: .5rem; background: #fff; border-top: 1px solid #dee2e6; }
       #chat-input input { flex: 1; }
-      .day-nav { position: absolute; top: 1rem; width: 30px; background: rgba(0,0,0,0.1);
-                 display: flex; align-items: center; justify-content: center; cursor: pointer; z-index:1000; }
-      #prevDay { left: 0; } #nextDay { right: 0; }
+      .day-nav {
+        position: absolute; top: 1rem; width: 30px;
+        background: rgba(0,0,0,0.1); display: flex; align-items: center;
+        justify-content: center; cursor: pointer; z-index: 1000;
+      }
+      #prevDay { left: 0; }
+      #nextDay { right: 0; }
     </style>
   </head>
   <body class="position-relative">
@@ -42,54 +46,62 @@
     <script>
     document.addEventListener('DOMContentLoaded', () => {
       const calendarEl = document.getElementById('calendar');
-      const prevBtn = document.getElementById('prevDay');
-      const nextBtn = document.getElementById('nextDay');
+      const prevBtn    = document.getElementById('prevDay');
+      const nextBtn    = document.getElementById('nextDay');
 
-      // choose day view on mobile, week on desktop
-      const isMobile = window.innerWidth < 768;
+      // use day view on mobile, week view on desktop
+      const isMobile    = window.innerWidth < 768;
       const initialView = isMobile ? 'timeGridDay' : 'timeGridWeek';
 
       const calendar = new FullCalendar.Calendar(calendarEl, {
         initialView,
         allDaySlot: false,
+
+        // 1.5h slots from 07:00–23:00
         slotDuration: '01:30:00',
-        slotMinTime: '07:00:00',
-        slotMaxTime: '23:00:00',
-        firstDay: 1,
+        slotMinTime:  '07:00:00',
+        slotMaxTime:  '23:00:00',
+
+        firstDay: 1, 
         businessHours: {
           daysOfWeek: [1,2,3,4,5],
-          startTime: '07:00',
-          endTime: '23:00'
+          startTime:  '07:00',
+          endTime:    '23:00'
         },
-        headerToolbar: false,
-        themeSystem: 'bootstrap',
-        events: '/events',
 
-        // instant, correctly-aligned tap booking
+        // show "Monday May 30" etc.
+        dayHeaderFormat: {
+          weekday: 'long',
+          month:   'long',
+          day:     'numeric'
+        },
+
+        headerToolbar: false,
+        themeSystem:   'bootstrap',
+        events:        '/events',
+
+        // tap-only booking
         dateClick: info => {
           const [h,m,s] = calendar.getOption('slotDuration').split(':').map(Number);
-          const slotMs = ((h*60 + m)*60 + s) * 1000;
-          const startLocal = info.date;                   // JS Date in local tz
-          const endLocal = new Date(startLocal.getTime() + slotMs);
-          // build local ISO strings without forcing 'Z'
+          const slotMs  = ((h*60 + m)*60 + s) * 1000;
+          const start   = info.date;
+          const end     = new Date(start.getTime() + slotMs);
+
+          // build local ISO strings (no Z)
           const toLocalIso = d => {
             const pad = n => String(n).padStart(2,'0');
-            return d.getFullYear() + '-' +
-                   pad(d.getMonth()+1) + '-' +
-                   pad(d.getDate()) + 'T' +
-                   pad(d.getHours()) + ':' +
-                   pad(d.getMinutes()) + ':' +
-                   pad(d.getSeconds());
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
+                 + `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
           };
+
           fetch('/book', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              start: toLocalIso(startLocal),
-              end:   toLocalIso(endLocal)
+              start: toLocalIso(start),
+              end:   toLocalIso(end)
             })
-          })
-          .then(res => {
+          }).then(res => {
             if (res.ok) calendar.refetchEvents();
             else alert('Slot already booked');
           });
@@ -111,11 +123,11 @@
 
       calendar.render();
 
-      // prev/next arrows positioning
+      // adjust nav arrows height & position
       function adjustNav() {
         const rect = calendarEl.getBoundingClientRect();
         [prevBtn, nextBtn].forEach(btn => {
-          btn.style.top = rect.top + window.scrollY + 'px';
+          btn.style.top    = rect.top + window.scrollY + 'px';
           btn.style.height = rect.height + 'px';
         });
       }
@@ -125,7 +137,7 @@
       prevBtn.addEventListener('click', () => calendar.prev());
       nextBtn.addEventListener('click', () => calendar.next());
 
-      // touch-swipe support
+      // swipe support
       let startX = null;
       calendarEl.addEventListener('touchstart', e => startX = e.changedTouches[0].screenX);
       calendarEl.addEventListener('touchend', e => {
@@ -137,20 +149,22 @@
       });
 
       // chat lazy-load
-      const chatEl = document.getElementById('chat');
+      const chatEl      = document.getElementById('chat');
       const chatInputEl = document.getElementById('chat-input');
       const loadChat = () => {
-        chatEl.style.display = 'block';
+        chatEl.style.display      = 'block';
         chatInputEl.style.display = 'flex';
-        fetch('/messages').then(r => r.json()).then(data => {
-          chatEl.innerHTML = '';
-          data.forEach(m => {
-            const d = document.createElement('div');
-            d.className = 'mb-2';
-            d.innerHTML = `<strong>${m.username}</strong> <small class="text-muted">[${m.time}]</small><br>${m.text}`;
-            chatEl.appendChild(d);
+        fetch('/messages')
+          .then(r => r.json())
+          .then(data => {
+            chatEl.innerHTML = '';
+            data.forEach(m => {
+              const d = document.createElement('div');
+              d.className = 'mb-2';
+              d.innerHTML = `<strong>${m.username}</strong> <small class="text-muted">[${m.time}]</small><br>${m.text}`;
+              chatEl.appendChild(d);
+            });
           });
-        });
       };
       window.addEventListener('scroll', () => {
         if (chatEl.getBoundingClientRect().top < window.innerHeight) loadChat();
