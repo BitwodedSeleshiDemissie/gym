@@ -45,8 +45,12 @@
       const prevBtn = document.getElementById('prevDay');
       const nextBtn = document.getElementById('nextDay');
 
+      // choose day view on mobile, week on desktop
+      const isMobile = window.innerWidth < 768;
+      const initialView = isMobile ? 'timeGridDay' : 'timeGridWeek';
+
       const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'timeGridWeek',
+        initialView,
         allDaySlot: false,
         slotDuration: '01:30:00',
         slotMinTime: '07:00:00',
@@ -61,15 +65,29 @@
         themeSystem: 'bootstrap',
         events: '/events',
 
-        // tap-only booking (no hold, no drag)
+        // instant, correctly-aligned tap booking
         dateClick: info => {
           const [h,m,s] = calendar.getOption('slotDuration').split(':').map(Number);
           const slotMs = ((h*60 + m)*60 + s) * 1000;
-          const endIso = new Date(info.date.getTime() + slotMs).toISOString();
+          const startLocal = info.date;                   // JS Date in local tz
+          const endLocal = new Date(startLocal.getTime() + slotMs);
+          // build local ISO strings without forcing 'Z'
+          const toLocalIso = d => {
+            const pad = n => String(n).padStart(2,'0');
+            return d.getFullYear() + '-' +
+                   pad(d.getMonth()+1) + '-' +
+                   pad(d.getDate()) + 'T' +
+                   pad(d.getHours()) + ':' +
+                   pad(d.getMinutes()) + ':' +
+                   pad(d.getSeconds());
+          };
           fetch('/book', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ start: info.dateStr, end: endIso })
+            body: JSON.stringify({
+              start: toLocalIso(startLocal),
+              end:   toLocalIso(endLocal)
+            })
           })
           .then(res => {
             if (res.ok) calendar.refetchEvents();
@@ -93,7 +111,7 @@
 
       calendar.render();
 
-      // nav arrows
+      // prev/next arrows positioning
       function adjustNav() {
         const rect = calendarEl.getBoundingClientRect();
         [prevBtn, nextBtn].forEach(btn => {
@@ -107,7 +125,7 @@
       prevBtn.addEventListener('click', () => calendar.prev());
       nextBtn.addEventListener('click', () => calendar.next());
 
-      // touch-swipe
+      // touch-swipe support
       let startX = null;
       calendarEl.addEventListener('touchstart', e => startX = e.changedTouches[0].screenX);
       calendarEl.addEventListener('touchend', e => {
