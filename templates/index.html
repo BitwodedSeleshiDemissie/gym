@@ -10,12 +10,13 @@
     <style>
       body { background-color: #f8f9fa; margin: 0; padding: 0; }
       #calendar { width: 100%; margin: 1rem 0; position: relative; }
-      #chat { width: 100%; padding: 0.5rem; background: #fff; border-top: 1px solid #dee2e6; display: none; }
-      #chat-input { display: none; flex-direction: row; padding: 0.5rem; background: #fff; border-top: 1px solid #dee2e6; }
+      #chat, #chat-input { display: none; }
+      #chat { padding: .5rem; background: #fff; border-top: 1px solid #dee2e6; }
+      #chat-input { display: flex; padding: .5rem; background: #fff; border-top: 1px solid #dee2e6; }
       #chat-input input { flex: 1; }
-      .day-nav { position: absolute; top: 1rem; width: 30px; background: rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 1000; }
-      #prevDay { left: 0; }
-      #nextDay { right: 0; }
+      .day-nav { position: absolute; top: 1rem; width: 30px; background: rgba(0,0,0,0.1);
+                 display: flex; align-items: center; justify-content: center; cursor: pointer; z-index:1000; }
+      #prevDay { left: 0; } #nextDay { right: 0; }
     </style>
   </head>
   <body class="position-relative">
@@ -37,10 +38,7 @@
     <div id="prevDay" class="day-nav">&lt;</div>
     <div id="nextDay" class="day-nav">&gt;</div>
 
-    <script>
-      const CURRENT_USER_ID = {{ current_user.id }};
-    </script>
-
+    <script> const CURRENT_USER_ID = {{ current_user.id }}; </script>
     <script>
     document.addEventListener('DOMContentLoaded', () => {
       const calendarEl = document.getElementById('calendar');
@@ -48,57 +46,30 @@
       const nextBtn = document.getElementById('nextDay');
 
       const calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'timeGridWeek',    // always show full week
+        initialView: 'timeGridWeek',
         allDaySlot: false,
-
-        // 1.5-hour slots, from 7:00 to 23:00
         slotDuration: '01:30:00',
         slotMinTime: '07:00:00',
         slotMaxTime: '23:00:00',
-
-        firstDay: 1,  // Monday start
+        firstDay: 1,
         businessHours: {
-          daysOfWeek: [1,2,3,4,5],  // Mon–Fri
+          daysOfWeek: [1,2,3,4,5],
           startTime: '07:00',
-          endTime:   '23:00'
+          endTime: '23:00'
         },
-
         headerToolbar: false,
         themeSystem: 'bootstrap',
-        selectable: true,
-
-        // eliminate long-press on touch (instant tap=select)
-        longPressDelay: 0,
-        selectLongPressDelay: 0,
-
         events: '/events',
 
-        // desktop drag-to-select or multi-slot on mobile
-        select: info => {
-          fetch('/book', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ start: info.startStr, end: info.endStr })
-          })
-          .then(res => {
-            if (res.ok) calendar.refetchEvents();
-            else alert('Slot already booked');
-          });
-        },
-
-        // mobile tap: book exactly one 1.5h slot at tapped time
+        // tap-only booking (no hold, no drag)
         dateClick: info => {
-          const [h, m, s] = calendar.getOption('slotDuration').split(':').map(Number);
+          const [h,m,s] = calendar.getOption('slotDuration').split(':').map(Number);
           const slotMs = ((h*60 + m)*60 + s) * 1000;
           const endIso = new Date(info.date.getTime() + slotMs).toISOString();
-
           fetch('/book', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              start: info.dateStr,
-              end:   endIso
-            })
+            body: JSON.stringify({ start: info.dateStr, end: endIso })
           })
           .then(res => {
             if (res.ok) calendar.refetchEvents();
@@ -107,10 +78,8 @@
         },
 
         eventClick: info => {
-          const ownerId = info.event.extendedProps.user_id;
-          if (ownerId !== CURRENT_USER_ID) {
-            alert('You can only remove your own bookings.');
-            return;
+          if (info.event.extendedProps.user_id !== CURRENT_USER_ID) {
+            return alert('You can only remove your own bookings.');
           }
           if (confirm('Remove this booking?')) {
             fetch(`/booking/${info.event.id}`, { method: 'DELETE' })
@@ -124,12 +93,13 @@
 
       calendar.render();
 
+      // nav arrows
       function adjustNav() {
         const rect = calendarEl.getBoundingClientRect();
-        prevBtn.style.top = rect.top + window.scrollY + 'px';
-        nextBtn.style.top = rect.top + window.scrollY + 'px';
-        prevBtn.style.height = rect.height + 'px';
-        nextBtn.style.height = rect.height + 'px';
+        [prevBtn, nextBtn].forEach(btn => {
+          btn.style.top = rect.top + window.scrollY + 'px';
+          btn.style.height = rect.height + 'px';
+        });
       }
       adjustNav();
       window.addEventListener('resize', adjustNav);
@@ -137,34 +107,32 @@
       prevBtn.addEventListener('click', () => calendar.prev());
       nextBtn.addEventListener('click', () => calendar.next());
 
-      // touch-swipe support
+      // touch-swipe
       let startX = null;
       calendarEl.addEventListener('touchstart', e => startX = e.changedTouches[0].screenX);
       calendarEl.addEventListener('touchend', e => {
         const endX = e.changedTouches[0].screenX;
         if (startX !== null && Math.abs(startX - endX) > 50) {
-          (startX > endX ? calendar.next() : calendar.prev());
+          startX > endX ? calendar.next() : calendar.prev();
         }
         startX = null;
       });
 
-      // lazy-load chat
+      // chat lazy-load
       const chatEl = document.getElementById('chat');
       const chatInputEl = document.getElementById('chat-input');
       const loadChat = () => {
         chatEl.style.display = 'block';
         chatInputEl.style.display = 'flex';
-        fetch('/messages')
-          .then(r => r.json())
-          .then(data => {
-            chatEl.innerHTML = '';
-            data.forEach(m => {
-              const d = document.createElement('div');
-              d.className = 'mb-2';
-              d.innerHTML = `<strong>${m.username}</strong> <small class="text-muted">[${m.time}]</small><br>${m.text}`;
-              chatEl.appendChild(d);
-            });
+        fetch('/messages').then(r => r.json()).then(data => {
+          chatEl.innerHTML = '';
+          data.forEach(m => {
+            const d = document.createElement('div');
+            d.className = 'mb-2';
+            d.innerHTML = `<strong>${m.username}</strong> <small class="text-muted">[${m.time}]</small><br>${m.text}`;
+            chatEl.appendChild(d);
           });
+        });
       };
       window.addEventListener('scroll', () => {
         if (chatEl.getBoundingClientRect().top < window.innerHeight) loadChat();
